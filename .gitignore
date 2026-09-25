@@ -4,6 +4,7 @@
 !.env.example
 *.pem
 *.key
+dataset/
 
 # Python
 __pycache__/
