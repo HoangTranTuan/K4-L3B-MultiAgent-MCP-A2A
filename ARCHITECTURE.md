@@ -52,4 +52,18 @@ Liệt kê kiểm tra trước finalize: schema, entity scope, rejected candidat
 
 ## 7. Reproducibility
 
-Ghi model/config, dependency pinning, concurrency limit, random seed (nếu có), lệnh chạy và giới hạn tài nguyên. Không ghi API key.
+Hệ thống được thiết kế ưu tiên tính tất định để đảm bảo kết quả chấm điểm nhất quán trên mọi môi trường.
+
+*   **Model & Config:**
+    *   Mô hình AI: `[Điền phiên bản model cụ thể, vd: gemini-1.5-flash-002]` (Khóa cứng phiên bản, tuyệt đối không dùng tag `latest`).
+    *   Tham số suy luận: Bắt buộc `temperature = 0.0` trên toàn bộ Specialist Agents và Verifier để giảm thiểu ảo giác và giữ tính logic cố định.
+    *   Bảo mật: Không đính kèm API Key. Giám khảo sử dụng file `.env.example` để tạo file `.env` cục bộ.
+*   **Dependency Pinning:** Toàn bộ thư viện môi trường được khóa cứng phiên bản tại `pyproject.toml`. 
+*   **Concurrency & Resource Limits:** 
+    *   Giới hạn đồng thời: Sử dụng `asyncio.Semaphore(5)` (hoặc tương đương) tại Coordinator để chặn gọi API ồ ạt, tránh dính lỗi Rate Limit (HTTP 429).
+    *   Tài nguyên tối thiểu: Python 3.10+, RAM 4GB.
+*   **Random Seed:** Cố định `random.seed(42)` ngay tại điểm khởi chạy (Entry point) của `cli.py`.
+*   **Lệnh chạy kiểm chứng:**
+    *   Cài đặt: `pip install -e .`
+    *   Thực thi luồng chính: `python -m src.student_agent.cli --input inputs/ --output outputs/`
+    *   Kiểm thử an toàn: `pytest tests/test_release_safety.py -v`
