@@ -44,7 +44,8 @@ async def _run(root: Path) -> None:
         discovered_tools = await gateway.list_tools()
         if not discovered_tools:
             raise RuntimeError("MCP Gateway returned no tools")
-        for case_id in case_set.case_ids:
+        total_cases = len(case_set.case_ids)
+        for idx, case_id in enumerate(case_set.case_ids, 1):
             case = case_set.cases[case_id]
             trace.emit(case_id=case_id, event_type="case_received", actor="coordinator")
             output = await solve_case(case, gateway, trace)
@@ -58,6 +59,8 @@ async def _run(root: Path) -> None:
             )
             temporary.replace(target)
             trace.emit(case_id=case_id, event_type="case_finalized", actor="coordinator")
+            issue = output.get("assessment", {}).get("primary_issue", "unknown")
+            print(f"[{idx:3d}/{total_cases}] Done {case_id} -> {issue}", flush=True)
 
 
 def parser() -> argparse.ArgumentParser:
