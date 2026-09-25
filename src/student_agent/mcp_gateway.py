@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -16,29 +17,63 @@ class EvidenceGateway:
     def __init__(self, session: ClientSession, contracts: Contracts) -> None:
         self._session = session
         self._contracts = contracts
+        # Cache key: (case_id, tool_name, tuple(sorted(arguments.items())))
+        self._cache: dict[tuple[str, str, tuple[tuple[str, Any], ...]], dict[str, Any]] = {}
+
+    def clear_case_cache(self, case_id: str | None = None) -> None:
+        """Clear cache for a specific case or all cases when case closes."""
+        if case_id is None:
+            self._cache.clear()
+        else:
+            keys_to_remove = [k for k in self._cache if k[0] == case_id]
+            for k in keys_to_remove:
+                del self._cache[k]
 
     async def list_tools(self) -> list[str]:
         response = await self._session.list_tools()
         return sorted(tool.name for tool in response.tools)
 
     async def call(self, tool_name: str, *, case_id: str, **arguments: str) -> dict[str, Any]:
+        cache_key = (case_id, tool_name, tuple(sorted(arguments.items())))
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         payload = {"case_id": case_id, **arguments}
-        result = await self._session.call_tool(tool_name, arguments=payload)
-        if result.isError:
-            message = " ".join(
-                block.text for block in result.content if getattr(block, "text", None)
-            )
-            raise RuntimeError(f"MCP tool {tool_name} failed: {message or 'unknown error'}")
-        evidence = getattr(result, "structuredContent", None)
-        if evidence is None:
-            evidence = getattr(result, "structured_content", None)
-        if evidence is None:
-            text_blocks = [block.text for block in result.content if getattr(block, "text", None)]
-            if len(text_blocks) != 1:
-                raise ValueError(f"MCP tool {tool_name} did not return one evidence object")
-            evidence = json.loads(text_blocks[0])
-        self._contracts.validate_evidence(evidence, f"MCP tool {tool_name}")
-        return evidence
+
+        # Retry up to 2 times on transient failures
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                result = await self._session.call_tool(tool_name, arguments=payload)
+                is_err = getattr(result, "is_error", getattr(result, "isError", False))
+                if is_err:
+                    message = " ".join(
+                        block.text for block in result.content if getattr(block, "text", None)
+                    )
+                    raise RuntimeError(f"MCP tool {tool_name} failed: {message or 'unknown error'}")
+                evidence = getattr(result, "structuredContent", None)
+                if evidence is None:
+                    evidence = getattr(result, "structured_content", None)
+                if evidence is None:
+                    text_blocks = [
+                        block.text for block in result.content if getattr(block, "text", None)
+                    ]
+                    if len(text_blocks) != 1:
+                        raise ValueError(f"MCP tool {tool_name} did not return one evidence object")
+                    evidence = json.loads(text_blocks[0])
+                self._contracts.validate_evidence(evidence, f"MCP tool {tool_name}")
+                self._cache[cache_key] = evidence
+                return evidence
+            except (httpx2.TimeoutException, TimeoutError) as exc:
+                last_exc = exc
+                if attempt < 2:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                else:
+                    raise RuntimeError(
+                        f"MCP tool {tool_name} timed out after 3 attempts"
+                    ) from last_exc
+
+        raise RuntimeError(f"MCP tool {tool_name} failed unexpectedly") from last_exc
 
 
 @asynccontextmanager
