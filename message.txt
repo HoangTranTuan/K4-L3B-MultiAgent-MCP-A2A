@@ -1,0 +1,142 @@
+Dựa trên thiết kế kiến trúc hệ thống cực kỳ chặt chẽ tại file `ARCHITECTURE.md`, đây là bản phân công chi tiết chia làm 3 giai đoạn. Để làm song song mà không phải đợi nhau, **Giai đoạn 1 sẽ áp dụng 100% Mock Data (Dữ liệu giả)**.
+
+Dưới đây là checklist công việc (bạn có thể copy thẳng vào GitHub Issue/Markdown):
+
+### Giai đoạn 1: Xây Dựng Core Modules Độc Lập (Sử dụng Mock Data)
+
+*Mục tiêu: Ai làm việc nấy. Dùng dữ liệu giả (hardcode input/output) để test logic nội bộ của module mình phụ trách.*
+
+* [x] **Task 1.1: Xây dựng Coordinator & Specialists (A2A Protocol)**
+* **File:** `src/student_agent/workflow.py`, `src/student_agent/cases.py`
+* **Yêu cầu:**
+* Lập trình **Coordinator**: Nhận mock Entity, định tuyến gọi Specialist tương ứng, cấu hình `asyncio.Semaphore(5)` để chặn gọi API ồ ạt.
+
+
+* Lập trình các **Specialist Agents** (Order, Shipment, Payment, Policy). Cấu hình sử dụng model `qwen/qwen3.5-9b`, set `temperature=0.0`.
+
+
+* Áp dụng thông điệp A2A (`case_id`, `from`, `to`, `type`, `payload`). Thiết lập vòng lặp tối đa (round-budget) để chống loop.
+
+
+
+
+* **Kiểm thử:** Dùng script gọi mock chạy thử Coordinator để xem có in ra log `task_assigned` không.
+* **Người phụ trách:** **Hoàng** | **Trạng thái:** Đã hoàn thành code (Chờ Hoàng chạy kiểm thử).
+
+
+* [ ] **Task 1.2: Xây dựng Verifier & Conflict Resolver (10 Invariants)**
+* **File:** `src/student_agent/contracts.py`, `src/student_agent/submission.py`
+* **Yêu cầu:**
+* Lập trình **Conflict Resolver**: Viết hàm nhận mock claims từ các Specialist, so sánh `evidence_ref` và phát hiện `unresolved_conflicts`.
+
+
+* Lập trình **Verifier**: Code cứng 10 invariants (Schema, Entity scope, Claim linkage, Timeline, v.v.) từ Mục 6. Bất cứ lỗi nào cũng trả về `status=failed`.
+
+
+* Viết logic xuất file kết quả cuối ra `outputs/<case_id>.json`.
+
+
+
+
+* **Kiểm thử:** Truyền một file JSON lỗi (thiếu evidence) vào Verifier, đảm bảo nó văng lỗi chặn lại ngay.
+* **Người phụ trách:** **Hải** | **Trạng thái:** Chưa thực hiện.
+
+
+* [ ] **Task 1.3: Dựng Entity Resolver, Trace & MCP Gateway**
+* **File:** `src/student_agent/mcp_gateway.py`, `src/student_agent/trace.py`, `src/student_agent/cli.py`
+* **Yêu cầu:**
+* Lập trình **Entity Resolver**: Viết hàm chấm điểm confidence cho candidate và giữ lại danh sách `rejected_candidates`.
+
+
+* Cấu hình **MCP Gateway**: Cài đặt cache (chặn gọi lặp) theo key `(case_id, tool_name, params)` và logic Retry tối đa 2 lần khi timeout.
+
+
+* Lập trình **Trace**: Chỉ cho phép ghi 4 sự kiện hợp lệ (`task_assigned`, `handoff`, `tool_result_consumed`, `verification_completed`) vào `traces/trace.jsonl`. Khởi tạo `random.seed(42)` tại CLI.
+
+
+
+
+* **Kiểm thử:** `python -m src.student_agent.cli` (có seed) chạy và xuất ra file trace giả.
+* **Người phụ trách:** **Đại** | **Trạng thái:** Chưa thực hiện.
+
+
+
+---
+
+### Giai đoạn 2: Tích Hợp Hệ Thống (Nối Data Thật)
+
+*Mục tiêu: Xóa bỏ các mock data, nối API thật vào và cho data chảy xuyên suốt từ Input -> Output.*
+
+* [x] **Task 2.1: Kết nối LLM thật và MCP Gateway**
+* **File:** Toàn bộ `src/student_agent/`
+* **Yêu cầu:**
+* Nối các tool của Entity Resolver và Specialists thẳng vào MCP Gateway của Đại.
+
+
+* Đảm bảo Coordinator/Verifier/Conflict Resolver **không** tự gọi MCP mới (least privilege).
+
+
+
+
+* **Kiểm thử:** Gọi thử mô hình `qwen/qwen3.5-9b` xem Native Tool Calling có hoạt động và trả về `evidence_ref` hợp lệ hay không.
+* **Người phụ trách:** **Hoàng** (Code chính) + **Đại** (Hỗ trợ Gateway) | **Trạng thái:** Đã hoàn thành code (Chờ Hoàng chạy kiểm thử).
+
+
+* [ ] **Task 2.2: Ghép luồng Output và Pipeline Invariants**
+* **File:** `src/student_agent/workflow.py`, `src/student_agent/submission.py`
+* **Yêu cầu:**
+* Đẩy luồng dữ liệu từ Coordinator sau khi giải quyết mâu thuẫn vào Verifier của Hải.
+
+
+* Map chính xác `evidence_ref` sinh ra từ MCP Gateway vào từng claim field trong JSON Output.
+
+
+
+
+* **Kiểm thử:** In thử JSON Output ra console xem cấu trúc đã đúng chuẩn chưa.
+* **Người phụ trách:** **Hải** | **Trạng thái:** Chưa thực hiện.
+
+
+* [ ] **Task 2.3: Nạp Dataset và Chạy End-to-End**
+* **File:** `src/student_agent/cli.py`
+* **Yêu cầu:**
+* Đọc toàn bộ case từ `inputs/L3B_CASE_XXX.json`.
+
+
+* Truyền vào hệ thống và kích hoạt luồng. Kiểm tra xem log `tool_result_consumed` có được bắn ra khi Specialist xài evidence không.
+
+
+
+
+* **Kiểm thử:** Chạy lệnh `python -m src.student_agent.cli --input inputs/ --output outputs/`.
+
+
+* **Người phụ trách:** **Đại** | **Trạng thái:** Chưa thực hiện.
+
+
+
+---
+
+### Giai đoạn 3: Release & Tối Ưu (Code Freeze)
+
+*Mục tiêu: Sửa lỗi crash, xử lý các test case rớt, và cấm không ai được thêm tính năng mới.*
+
+* [ ] **Task 3.1: Fix lỗi suy luận và Timeout**
+* **Yêu cầu:** Dựa vào log chạy E2E, nếu API bị timeout liên tục, Hoàng điều chỉnh giảm reasoning effort của Specialists hoặc tinh chỉnh A2A prompt để chặn loop.
+
+
+* **Người phụ trách:** **Hoàng** | **Trạng thái:** Chưa thực hiện.
+
+
+* [ ] **Task 3.2: Khắc phục lỗi Fail Invariants**
+* **Yêu cầu:** Nếu Verifier báo lỗi (ví dụ: mất danh sách `rejected_candidates`, ngày hoàn tiền sai lệch timeline), Hải phải trực tiếp debug và thêm logic catch/default value an toàn để pass validator.
+
+
+* **Người phụ trách:** **Hải** | **Trạng thái:** Chưa thực hiện.
+
+
+* [ ] **Task 3.3: Final Safety Test & Đóng gói**
+* **Yêu cầu:** Chạy `pytest tests/test_release_safety.py -v`. Đảm bảo file `traces/trace.jsonl` cực kỳ sạch sẽ, không lộ prompt. Khóa code.
+
+
+* **Người phụ trách:** **Đại** | **Trạng thái:** Chưa thực hiện.

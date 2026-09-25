@@ -1,3 +1,16 @@
+"""Multi-Agent Investigation Workflow for Day09 L3B.
+
+Architecture Flow:
+Input -> Entity Resolver -> Coordinator -> Specialists -> Conflict Resolver -> Verifier -> Output
+               │                              │                  │             │
+               └──────────────────────────── MCP ────────────────┴──────────── Trace
+
+Least Privilege & Provenance:
+- Only Entity Resolver and Specialists call domain-specific MCP tools.
+- Coordinator, Conflict Resolver, and Verifier do not fetch new evidence.
+- Every consumed evidence emits an observable 'tool_result_consumed' trace event.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -6,6 +19,10 @@ from typing import Any
 
 from .mcp_gateway import EvidenceGateway, resolve_entities
 from .trace import TraceWriter
+from .verifier import Verifier
+
+# Global concurrency limiter to prevent HTTP 429 rate limit
+SEMAPHORE = asyncio.Semaphore(5)
 
 # ============================================================
 # GENERIC HELPERS

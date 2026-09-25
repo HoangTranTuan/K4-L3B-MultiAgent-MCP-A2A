@@ -4,6 +4,7 @@
 !.env.example
 *.pem
 *.key
+dataset/
 
 # Python
 __pycache__/
@@ -34,3 +35,7 @@ dist/*
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Large raw datasets
+dataset/
+

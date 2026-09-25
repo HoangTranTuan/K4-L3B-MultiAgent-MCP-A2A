@@ -30,6 +30,9 @@ class Settings:
     team_api_key: str
     mcp_endpoint: str
     root: Path
+    llm_base_url: str = "http://localhost:11434/v1"
+    llm_model: str = "qwen2.5:7b"
+    llm_api_key: str = "ollama"
 
     @classmethod
     def load(cls, root: Path | None = None) -> Settings:

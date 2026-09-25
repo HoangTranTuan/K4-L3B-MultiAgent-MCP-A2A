@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,96 @@ class CaseSet:
     variant_id: str
     case_ids: tuple[str, ...]
     cases: dict[str, dict[str, Any]]
+
+
+@dataclass
+class ResolvedEntity:
+    """Resolved entity representation passed from Entity Resolver to Coordinator."""
+
+    case_id: str
+    customer_unique_id: str | None = None
+    resolved_order_ids: list[str] = field(default_factory=list)
+    item_ids: list[str] = field(default_factory=list)
+    seller_ids: list[str] = field(default_factory=list)
+    shipment_ids: list[str] = field(default_factory=list)
+    payment_references: list[str] = field(default_factory=list)
+    status: str = "resolved"  # "resolved" | "ambiguous" | "not_found"
+    confidence: float = 1.0
+    rejected_candidates: list[str] = field(default_factory=list)
+    complaint_type: str | None = None
+    description: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "case_id": self.case_id,
+            "customer_unique_id": self.customer_unique_id,
+            "resolved_order_ids": list(self.resolved_order_ids),
+            "item_ids": list(self.item_ids),
+            "seller_ids": list(self.seller_ids),
+            "shipment_ids": list(self.shipment_ids),
+            "payment_references": list(self.payment_references),
+            "status": self.status,
+            "confidence": self.confidence,
+            "rejected_candidates": list(self.rejected_candidates),
+            "complaint_type": self.complaint_type,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ResolvedEntity:
+        return cls(
+            case_id=data["case_id"],
+            customer_unique_id=data.get("customer_unique_id"),
+            resolved_order_ids=list(data.get("resolved_order_ids", [])),
+            item_ids=list(data.get("item_ids", [])),
+            seller_ids=list(data.get("seller_ids", [])),
+            shipment_ids=list(data.get("shipment_ids", [])),
+            payment_references=list(data.get("payment_references", [])),
+            status=data.get("status", "resolved"),
+            confidence=float(data.get("confidence", 1.0)),
+            rejected_candidates=list(data.get("rejected_candidates", [])),
+            complaint_type=data.get("complaint_type"),
+            description=data.get("description"),
+        )
+
+
+def create_mock_resolved_entity(
+    case_id: str = "CASE_MOCK_001",
+    complaint_type: str = "late_delivery",
+    customer_unique_id: str = "cust_mock_12345",
+    order_id: str = "order_mock_98765",
+    confidence: float = 0.95,
+) -> ResolvedEntity:
+    """Generate a mock ResolvedEntity for testing Coordinator and Specialists."""
+    return ResolvedEntity(
+        case_id=case_id,
+        customer_unique_id=customer_unique_id,
+        resolved_order_ids=[order_id],
+        item_ids=[f"item_{order_id}_01"],
+        seller_ids=["seller_mock_001"],
+        shipment_ids=[f"ship_{order_id}_01"],
+        payment_references=[f"pay_{order_id}_01"],
+        status="resolved",
+        confidence=confidence,
+        rejected_candidates=["order_mock_99999"],
+        complaint_type=complaint_type,
+        description=f"Mock customer complaint regarding {complaint_type} for order {order_id}",
+    )
+
+
+def create_mock_case(
+    case_id: str = "CASE_MOCK_001",
+    complaint_type: str = "late_delivery",
+    description: str = "Customer reports item arrived late with logistics delay",
+) -> dict[str, Any]:
+    """Generate a mock case dictionary matching the Day09 inputs structure."""
+    return {
+        "case_id": case_id,
+        "complaint_type": complaint_type,
+        "description": description,
+        "customer_hint": {"name": "Test Customer", "email": "customer@example.com"},
+        "date_hint": "2024-01-15",
+    }
 
 
 def _object(path: Path) -> dict[str, Any]:
